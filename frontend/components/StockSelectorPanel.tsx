@@ -1,4 +1,5 @@
 // components/StockSelectorPanel.tsx
+"use client"; // Ensure this component is client-side for interactivity
 import React from 'react';
 import styles from './StockSelectorPanel.module.css'; // Create this CSS file
 

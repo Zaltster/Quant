@@ -34,3 +34,51 @@
     color: #aaa;
     font-size: 0.9em;
 }
+
+/* components/MainChartDisplay.module.css */
+/* ... existing styles (.chartArea, .priceValue, .chartContainer) ... */
+
+/* --- Styles for Custom Tooltip --- */
+.customTooltip {
+    background-color: rgba(255, 255, 255, 0.9);
+    /* Semi-transparent white */
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    font-size: 0.9em;
+}
+
+.tooltipLabel {
+    font-weight: bold;
+    margin: 0 0 5px 0;
+    color: #333;
+}
+
+.tooltipPrice {
+    margin: 0;
+    color: #0d6efd;
+    /* Blue */
+}
+
+.tooltipTradeDetails {
+    border-top: 1px solid #eee;
+    margin-top: 5px;
+    padding-top: 5px;
+}
+
+.tooltipTradeDetails p {
+    margin: 3px 0;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.tooltipBuy {
+    color: #198754;
+    /* Bootstrap success green */
+}
+
+.tooltipSell {
+    color: #dc3545;
+    /* Bootstrap danger red */
+}
