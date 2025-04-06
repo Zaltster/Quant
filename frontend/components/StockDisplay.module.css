@@ -1,0 +1,69 @@
+/* components/StockDisplay.module.css */
+
+.stockCard {
+    border: 1px solid #eee;
+    padding: 10px 15px;
+    border-radius: 8px;
+    min-width: 220px;
+    /* Adjust as needed */
+    background-color: #f9f9f9;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+.header h3 {
+    margin: 0;
+    font-size: 1.1em;
+}
+
+.toggleButton {
+    padding: 3px 8px;
+    font-size: 0.8em;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #eee;
+}
+
+.toggleButton:hover {
+    background-color: #ddd;
+}
+
+.content p {
+    margin: 10px 0;
+    font-size: 1em;
+}
+
+.content p span {
+    /* Example for styling price value */
+    font-weight: bold;
+}
+
+
+.chartPlaceholder {
+    height: 100px;
+    /* Example size */
+    background-color: #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 10px 0;
+    color: #777;
+    font-size: 0.9em;
+    border-radius: 4px;
+}
+
+.tradeControlsPlaceholder {
+    margin-top: 15px;
+    text-align: center;
+    color: #aaa;
+    font-size: 0.9em;
+}

@@ -1,0 +1,32 @@
+/* components/NavBar.module.css */
+
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background-color: #20232a;
+    /* Dark background */
+    color: white;
+}
+
+.brand {
+    color: #61dafb;
+    /* React-like blue */
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 1.2rem;
+}
+
+.gameLinks a {
+    color: #aaa;
+    text-decoration: none;
+    margin-left: 1.5rem;
+    font-size: 1rem;
+    transition: color 0.2s ease-in-out;
+}
+
+.gameLinks a:hover,
+.gameLinks a:focus {
+    color: white;
+}

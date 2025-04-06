@@ -1,0 +1,60 @@
+/* components/StockSelectorPanel.module.css */
+
+.panel {
+    border: 1px solid #ccc;
+    padding: 10px;
+    border-radius: 5px;
+    background-color: #f8f9fa;
+    /* Light background for the panel */
+    min-width: 150px;
+    height: fit-content;
+    /* Adjust height based on content */
+}
+
+.panel h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    text-align: center;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+    font-size: 1.1em;
+    color: #333;
+}
+
+.panel ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.listItem,
+.selected {
+    padding: 8px 12px;
+    /* Slightly more padding */
+    margin-bottom: 5px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    font-size: 0.95em;
+    text-align: center;
+}
+
+.listItem {
+    background-color: #fff;
+    /* White background for non-selected items */
+    border: 1px solid #ddd;
+    color: #333;
+}
+
+.listItem:hover {
+    background-color: #e9ecef;
+    /* Light grey on hover */
+}
+
+.selected {
+    background-color: #0d6efd;
+    /* Blue for selected item */
+    color: white;
+    font-weight: bold;
+    border: 1px solid #0a58ca;
+}
