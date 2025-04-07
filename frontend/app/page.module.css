@@ -1,0 +1,101 @@
+/* frontend/app/page.module.css */
+
+.container {
+    min-height: 80vh;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.main {
+    padding: 4rem 1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    max-width: 800px;
+    width: 100%;
+}
+
+.hero {
+    text-align: center;
+    margin-bottom: 4rem;
+}
+
+.title {
+    margin: 0;
+    line-height: 1.15;
+    font-size: 3.5rem;
+    font-weight: bold;
+    text-align: center;
+    /* Ensure title is centered if used alone */
+}
+
+.description {
+    line-height: 1.6;
+    font-size: 1.2rem;
+    color: #555;
+    margin: 1.5rem 0 2.5rem 0;
+    text-align: center;
+}
+
+.ctaButton {
+    display: inline-block;
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #fff;
+    background-color: #0070f3;
+    border: none;
+    border-radius: 8px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.ctaButton:hover,
+.ctaButton:focus {
+    background-color: #005bb5;
+}
+
+.features {
+    margin-top: 3rem;
+    width: 100%;
+    text-align: center;
+}
+
+.features h2 {
+    margin-bottom: 2rem;
+    font-size: 2rem;
+}
+
+.featureList {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+}
+
+.featureCard {
+    border: 1px solid #eaeaea;
+    border-radius: 10px;
+    padding: 1.5rem;
+    text-align: left;
+    max-width: 350px;
+    background-color: #fafafa;
+}
+
+.featureCard h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    font-size: 1.2rem;
+}
+
+.featureCard p {
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #333;
+}
