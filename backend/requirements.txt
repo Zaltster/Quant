@@ -7,3 +7,4 @@ scikit-learn
 torch
 uvicorn[standard]
 yfinance
+magnum
