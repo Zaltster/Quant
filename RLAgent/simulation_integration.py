@@ -45,7 +45,8 @@ app.add_middleware(
 # Global variables
 active_connections = []
 dqn_agent = None
-model_path = "lstm_transformer_dqn_model.pth"
+import os
+model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lstm_transformer_dqn_model.pth")
 
 # Default simulation parameters - used if backend_main.py is not available
 GAME_STOCK_TICKERS = ['BTC-USD', 'NVDA', 'TSLA', 'sp500', 'MSFT']
@@ -56,14 +57,18 @@ GENERATION_NOISE_STD_DEV = 0.008
 @app.on_event("startup")
 async def startup_event():
     global dqn_agent
-    if os.path.exists(model_path):
-        try:
-            dqn_agent = SimulationAgent(model_path)
-            print(f"LSTM-Transformer-DQN agent loaded from {model_path}")
-        except Exception as e:
-            print(f"Error loading LSTM-Transformer-DQN agent: {e}")
-    else:
-        print(f"No model found at {model_path}. Please train the model first.")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Looking for model at: {os.path.abspath(model_path)}")
+    
+    try:
+        # Always create the agent, even if model loading fails
+        # The SimulationAgent class now has fallback behavior for random actions
+        dqn_agent = SimulationAgent(model_path)
+        print(f"Agent initialized. Model loaded: {getattr(dqn_agent, 'model_loaded', False)}")
+    except Exception as e:
+        print(f"Error initializing agent: {e}")
+        import traceback
+        traceback.print_exc()
 
 # WebSocket connection manager
 class ConnectionManager:

@@ -1,0 +1,36 @@
+/* frontend/components/TabNavigation.module.css */
+.tabNavigation {
+    display: flex;
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 20px;
+}
+
+.tab {
+    padding: 12px 20px;
+    font-size: 1rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    color: #495057;
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.tab:hover {
+    background-color: #f8f9fa;
+}
+
+.active {
+    color: #007bff;
+    font-weight: 600;
+}
+
+.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: #007bff;
+}

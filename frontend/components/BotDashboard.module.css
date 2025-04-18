@@ -1,0 +1,166 @@
+/* frontend/components/BotDashboard.module.css */
+.botDashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 15px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.header h3 {
+    margin: 0;
+    color: #333;
+}
+
+.gameOver {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.performanceSection,
+.botPortfolioSection,
+.tradeHistorySection,
+.botStrategySection {
+    padding: 15px;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+}
+
+.metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.metric {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background-color: #ffffff;
+    border-radius: 4px;
+    border: 1px solid #eee;
+}
+
+.positive {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.negative {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.chartContainer {
+    height: 250px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+
+.portfolioDetails {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.portfolioMetric {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background-color: #ffffff;
+    border-radius: 4px;
+    border: 1px solid #eee;
+}
+
+.holdingsTable,
+.tradesTable {
+    margin-top: 10px;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.holdingRow,
+.tradeRow {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.holdingRow:last-child,
+.tradeRow:last-child {
+    border-bottom: none;
+}
+
+.tradeRow {
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+}
+
+.tradeInfo {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.tradeDetails {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9em;
+}
+
+.buyTrade {
+    background-color: rgba(40, 167, 69, 0.1);
+}
+
+.sellTrade {
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.tradeAction {
+    font-weight: bold;
+}
+
+.buyTrade .tradeAction {
+    color: #28a745;
+}
+
+.sellTrade .tradeAction {
+    color: #dc3545;
+}
+
+.profit {
+    color: #28a745;
+}
+
+.loss {
+    color: #dc3545;
+}
+
+.noHoldings,
+.noTrades {
+    text-align: center;
+    color: #6c757d;
+    font-style: italic;
+    padding: 10px;
+}
+
+.botStrategySection p {
+    line-height: 1.5;
+    color: #555;
+}

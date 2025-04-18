@@ -444,7 +444,7 @@ class DQNAgent:
 # SimulationAgent - For direct integration with the trading simulation
 class SimulationAgent:
     def __init__(self, model_path="lstm_transformer_dqn_model.pth", window_size=10):
-        # Define model parameters
+    # Define model parameters
         self.state_size = window_size + 2  # prices + balance + shares
         self.action_size = 3  # buy, hold, sell
         self.window_size = window_size
@@ -461,8 +461,11 @@ class SimulationAgent:
             self.model.load_state_dict(model_state['model'])
             self.model.eval()
             print(f"Loaded model from {model_path}")
+            self.model_loaded = True
         except Exception as e:
             print(f"Error loading model: {e}")
+            print("WARNING: Using random decisions instead!")
+            self.model_loaded = False
         
         # Initialize state tracking
         self.price_history = []
@@ -489,6 +492,14 @@ class SimulationAgent:
     
     def decide_action(self, current_price, balance, shares_held):
         """Decide what action to take given the current state"""
+        # If model failed to load, return random decisions
+        if not hasattr(self, 'model_loaded') or not self.model_loaded:
+            import random
+            action = random.choice([0, 1, 2])  # 0: HOLD, 1: BUY, 2: SELL
+            print(f"Random action: {action} (model not loaded)")
+            return action
+        
+        # Rest of the original method...
         # Update price history
         self.price_history.append(current_price)
         if len(self.price_history) > self.window_size:

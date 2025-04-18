@@ -165,4 +165,34 @@
     box-sizing: border-box;
 }
 
+/* Add to frontend/app/games/stock-101/Stock101Page.module.css */
+
+.botStatus {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+}
+
+.botStatus h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    text-align: center;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+.connected {
+    color: #28a745;
+    font-weight: bold;
+    text-align: center;
+}
+
+.disconnected {
+    color: #dc3545;
+    font-weight: bold;
+    text-align: center;
+}
+
 /* Ensure other component CSS modules complement this */
