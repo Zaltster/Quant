@@ -1,18 +1,13 @@
 // frontend/app/page.tsx
 "use client"; // Mark as client component if using client-side routing hooks like useRouter, otherwise not needed for just Link
-
+import DiceAnimation from '../components/DiceAnimation';
 import Head from 'next/head';
 import Link from 'next/link'; // Import Link for navigation
 import styles from './page.module.css'; // Using default Next.js page module for basic styling (can customize)
 // Or import a dedicated CSS module: import styles from './HomePage.module.css';
 
 export default function Home() {
-  // If you wanted programmatic navigation instead of Link:
-  // import { useRouter } from 'next/navigation'; // Note: Use 'next/navigation' in App Router
-  // const router = useRouter();
-  // const startInterview = () => {
-  //   router.push('/games/stock-101'); // Navigate to the first game
-  // };
+
 
   return (
     <div className={styles.container}> {/* Use a container for centering/padding */}
@@ -32,6 +27,9 @@ export default function Home() {
             Sharpen your skills with realistic quantitative trading simulations
             and challenges, presented in an interview-style format. Prepare for your next quant interview.
           </p>
+          <div style={{ position: 'relative', zIndex: 10, marginBottom: '20px' }}>
+            <DiceAnimation />
+          </div>
 
           {/* Call to Action Button - Links to the first game */}
           <Link href="/games/stock-101" passHref legacyBehavior>

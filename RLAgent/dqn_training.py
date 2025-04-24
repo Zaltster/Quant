@@ -37,7 +37,7 @@ def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64,
         initial_balance: starting portfolio balance
         transaction_fee: transaction fee as a percentage
         learning_rate: learning rate for the optimizer
-        gamma: discount factor for future rewards
+        gamma: discount factor for future rewards .
         epsilon: initial exploration rate
         epsilon_min: minimum exploration rate
         epsilon_decay: rate at which exploration decays
