@@ -1,7 +1,7 @@
 // frontend/components/BotDashboard.tsx
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import styles from './BotDashboard.module.css';
 
@@ -48,36 +48,75 @@ export default function BotDashboard({
     isGameOver,
     selectedTicker
 }: BotDashboardProps) {
+    // State to track which view of trades to show
+    const [showAllTrades, setShowAllTrades] = useState(true);
+
+    // State to store historical portfolio values
+    const [portfolioHistory, setPortfolioHistory] = useState<{ step: number, botValue: number, userValue: number }[]>([]);
+
     // Calculate bot's holdings summary
     const botHoldingsSummary: Record<string, number> = {};
     botPositions.forEach(pos => {
         botHoldingsSummary[pos.ticker] = (botHoldingsSummary[pos.ticker] || 0) + pos.quantity;
     });
 
+    // Update portfolio history when currentStep changes
+    useEffect(() => {
+        setPortfolioHistory(prev => {
+            // Create a copy of the previous history
+            const newHistory = [...prev];
+
+            // Add the current step's values if this step doesn't exist yet
+            if (!newHistory.find(item => item.step === currentStep)) {
+                newHistory.push({
+                    step: currentStep,
+                    botValue: botPortfolioValue,
+                    userValue: userPortfolioValue
+                });
+            }
+
+            // Sort by step
+            return newHistory.sort((a, b) => a.step - b.step);
+        });
+    }, [currentStep, botPortfolioValue, userPortfolioValue]);
+
     // Create data for performance comparison chart
-    const performanceData = Array(currentStep + 1).fill(null).map((_, index) => {
-        const botTradesUpToStep = botTradeHistory.filter(t => t.step <= index);
-
-        // Find the most recent portfolio values for this step (if we have historical data)
-        // In a real implementation, you'd track historical values at each step
-        const botValue = index === currentStep ? botPortfolioValue : initialCash;
-        const userValue = index === currentStep ? userPortfolioValue : initialCash;
-
-        return {
+    const performanceData = portfolioHistory.length > 0
+        ? portfolioHistory.map(item => ({
+            step: item.step + 1, // Add 1 for display (0-indexed to 1-indexed)
+            botValue: item.botValue,
+            userValue: item.userValue
+        }))
+        : Array(currentStep + 1).fill(null).map((_, index) => ({
             step: index + 1,
-            botValue,
-            userValue
-        };
-    });
+            botValue: index === currentStep ? botPortfolioValue : initialCash,
+            userValue: index === currentStep ? userPortfolioValue : initialCash
+        }));
 
     // Calculate ROI percentages
     const botROI = ((botPortfolioValue - initialCash) / initialCash * 100).toFixed(2);
     const userROI = ((userPortfolioValue - initialCash) / initialCash * 100).toFixed(2);
 
-    // Get bot's recent trades for the selected ticker
-    const recentBotTrades = botTradeHistory
+    // Get bot's recent trades
+    const tickerTrades = botTradeHistory
         .filter(trade => trade.ticker === selectedTicker)
-        .slice(-5); // Show only the 5 most recent trades
+        .sort((a, b) => b.step - a.step) // Sort by most recent first
+        .slice(0, 5); // Show only the 5 most recent trades
+
+    // Get all recent trades across all tickers
+    const allRecentTrades = botTradeHistory
+        .sort((a, b) => b.step - a.step) // Sort by most recent first
+        .slice(0, 10); // Show only the 10 most recent trades
+
+    // Total trading activity stats
+    const totalBuyTrades = botTradeHistory.filter(t => t.action === 'BUY').length;
+    const totalSellTrades = botTradeHistory.filter(t => t.action === 'SELL').length;
+    const totalTrades = botTradeHistory.length;
+
+    // Realized P&L from all completed trades
+    const totalRealizedPnl = botTradeHistory
+        .filter(t => t.action === 'SELL' && t.realizedPnl !== undefined)
+        .reduce((sum, trade) => sum + (trade.realizedPnl || 0), 0);
 
     return (
         <div className={styles.botDashboard}>
@@ -155,6 +194,16 @@ export default function BotDashboard({
                         <span>Equity:</span>
                         <span>${botPortfolioValue.toFixed(2)}</span>
                     </div>
+                    <div className={styles.portfolioMetric}>
+                        <span>Total Trades:</span>
+                        <span>{totalTrades} ({totalBuyTrades} buys, {totalSellTrades} sells)</span>
+                    </div>
+                    <div className={styles.portfolioMetric}>
+                        <span>Realized P&L:</span>
+                        <span className={totalRealizedPnl >= 0 ? styles.positive : styles.negative}>
+                            ${totalRealizedPnl.toFixed(2)}
+                        </span>
+                    </div>
                 </div>
 
                 <h5>Bot Holdings</h5>
@@ -173,13 +222,31 @@ export default function BotDashboard({
             </div>
 
             <div className={styles.tradeHistorySection}>
-                <h4>Recent Bot Trades for {selectedTicker}</h4>
-                {recentBotTrades.length > 0 ? (
+                <div className={styles.tradeHistoryHeader}>
+                    <h4>Bot Trade History</h4>
+                    <div className={styles.tradeViewToggle}>
+                        <button
+                            className={`${styles.toggleButton} ${showAllTrades ? styles.activeToggle : ''}`}
+                            onClick={() => setShowAllTrades(true)}
+                        >
+                            All Tickers
+                        </button>
+                        <button
+                            className={`${styles.toggleButton} ${!showAllTrades ? styles.activeToggle : ''}`}
+                            onClick={() => setShowAllTrades(false)}
+                        >
+                            {selectedTicker} Only
+                        </button>
+                    </div>
+                </div>
+
+                {(showAllTrades ? allRecentTrades : tickerTrades).length > 0 ? (
                     <div className={styles.tradesTable}>
-                        {recentBotTrades.map((trade) => (
+                        {(showAllTrades ? allRecentTrades : tickerTrades).map((trade) => (
                             <div key={trade.id} className={`${styles.tradeRow} ${trade.action === 'BUY' ? styles.buyTrade : styles.sellTrade}`}>
                                 <div className={styles.tradeInfo}>
                                     <span className={styles.tradeStep}>Step {trade.step + 1}</span>
+                                    <span className={styles.tradeTicker}>{trade.ticker}</span>
                                     <span className={styles.tradeAction}>{trade.action}</span>
                                 </div>
                                 <div className={styles.tradeDetails}>
@@ -194,7 +261,9 @@ export default function BotDashboard({
                         ))}
                     </div>
                 ) : (
-                    <p className={styles.noTrades}>No trades for {selectedTicker} yet</p>
+                    <p className={styles.noTrades}>
+                        {showAllTrades ? 'No trades recorded yet' : `No trades for ${selectedTicker} yet`}
+                    </p>
                 )}
             </div>
 

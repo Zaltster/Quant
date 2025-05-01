@@ -20,12 +20,12 @@ torch.manual_seed(42)
 np.random.seed(42)
 
 # Function to train the agent
-def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64, 
-                   initial_balance=100000, transaction_fee=0.001,
-                   learning_rate=0.001, gamma=0.99, epsilon=1.0, 
-                   epsilon_min=0.01, epsilon_decay=0.995, target_update=10,
-                   hidden_size=128, lstm_layers=1, transformer_layers=2, num_heads=4,
-                   model_save_path="lstm_transformer_dqn_model.pth", verbose=True):
+def train_dqn_agent(stock_data, episodes=150, window_size=10, batch_size=128, 
+                   initial_balance=100000, transaction_fee=0,
+                   learning_rate=0.002, gamma=0.95, epsilon=1.0, 
+                   epsilon_min=0.05, epsilon_decay=0.997, target_update=5,
+                   hidden_size=256, lstm_layers=1, transformer_layers=2, num_heads=4,
+                   model_save_path="lstm_transformer_dqn_model_active.pth", verbose=True):
     """
     Train the LSTM-Transformer-DQN agent on historical stock data
     
@@ -37,7 +37,7 @@ def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64,
         initial_balance: starting portfolio balance
         transaction_fee: transaction fee as a percentage
         learning_rate: learning rate for the optimizer
-        gamma: discount factor for future rewards .
+        gamma: discount factor for future rewards
         epsilon: initial exploration rate
         epsilon_min: minimum exploration rate
         epsilon_decay: rate at which exploration decays
@@ -80,7 +80,8 @@ def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64,
         'episode_rewards': [],
         'portfolio_values': [],
         'losses': [],
-        'epsilons': []
+        'epsilons': [],
+        'action_counts': []  # Track number of each action taken
     }
     
     # Training loop
@@ -91,6 +92,7 @@ def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64,
         done = False
         total_reward = 0
         episode_losses = []
+        episode_actions = {0: 0, 1: 0, 2: 0}  # Count HOLDs, BUYs, SELLs
         
         # Progress bar for steps within episode
         step_progress = tqdm(total=len(stock_data)-1, desc=f"Episode {episode+1}/{episodes}", 
@@ -99,6 +101,7 @@ def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64,
         while not done:
             # Get action
             action = agent.get_action(state)
+            episode_actions[action] += 1
             
             # Execute action
             next_state, reward, done, info = env.step(action)
@@ -127,6 +130,7 @@ def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64,
         metrics['episode_rewards'].append(total_reward)
         metrics['portfolio_values'].append(info["portfolio_value"])
         metrics['epsilons'].append(agent.epsilon)
+        metrics['action_counts'].append(episode_actions)
         
         if episode_losses:
             avg_loss = sum(episode_losses) / len(episode_losses)
@@ -136,7 +140,9 @@ def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64,
         
         # Print progress
         if verbose and (episode + 1) % max(1, episodes // 10) == 0:
-            print(f"Episode: {episode+1}/{episodes}, Reward: {total_reward:.4f}, Portfolio: ${info['portfolio_value']:.2f}, Epsilon: {agent.epsilon:.4f}, Avg Loss: {avg_loss if episode_losses else 'N/A'}")
+            print(f"Episode: {episode+1}/{episodes}, Reward: {total_reward:.4f}, Portfolio: ${info['portfolio_value']:.2f}, Epsilon: {agent.epsilon:.4f}")
+            print(f"Actions - HOLD: {episode_actions[0]}, BUY: {episode_actions[1]}, SELL: {episode_actions[2]}")
+            print(f"Avg Loss: {avg_loss if episode_losses else 'N/A'}")
     
     # Save the trained model
     agent.save(model_save_path)
@@ -149,11 +155,27 @@ def train_dqn_agent(stock_data, episodes=100, window_size=10, batch_size=64,
         print(f"Training Sharpe Ratio: {sharpe_ratio:.4f}")
         metrics['sharpe_ratio'] = sharpe_ratio
     
+    # Calculate action distribution across all episodes
+    total_actions = {0: 0, 1: 0, 2: 0}
+    for counts in metrics['action_counts']:
+        for action, count in counts.items():
+            total_actions[action] += count
+    
+    total_steps = sum(total_actions.values())
+    action_distribution = {
+        'HOLD': total_actions[0] / total_steps if total_steps > 0 else 0,
+        'BUY': total_actions[1] / total_steps if total_steps > 0 else 0,
+        'SELL': total_actions[2] / total_steps if total_steps > 0 else 0
+    }
+    
+    print(f"Action Distribution - HOLD: {action_distribution['HOLD']:.2%}, BUY: {action_distribution['BUY']:.2%}, SELL: {action_distribution['SELL']:.2%}")
+    metrics['action_distribution'] = action_distribution
+    
     return agent, metrics
 
 # Function to test the agent
 def test_dqn_agent(stock_data, model_path, window_size=10, 
-                  initial_balance=100000, transaction_fee=0.001, verbose=True):
+                  initial_balance=100000, transaction_fee=0, verbose=True):
     """
     Test the trained LSTM-Transformer-DQN agent on unseen stock data
     
@@ -189,6 +211,7 @@ def test_dqn_agent(stock_data, model_path, window_size=10,
     
     done = False
     total_reward = 0
+    action_counts = {0: 0, 1: 0, 2: 0}
     
     # Progress bar
     step_progress = tqdm(total=len(stock_data)-1, desc="Testing", disable=not verbose)
@@ -196,6 +219,7 @@ def test_dqn_agent(stock_data, model_path, window_size=10,
     while not done:
         # Get action (no exploration)
         action = agent.get_action(state, is_eval=True)
+        action_counts[action] += 1
         
         # Execute action
         next_state, reward, done, info = env.step(action)
@@ -235,6 +259,11 @@ def test_dqn_agent(stock_data, model_path, window_size=10,
         print(f"Return on Investment: {roi:.2f}%")
         print(f"Sharpe Ratio: {sharpe_ratio:.4f}")
         print(f"Total trades: {len(env.trade_history)}")
+        
+        # Print action distribution
+        total_steps = sum(action_counts.values())
+        if total_steps > 0:
+            print(f"Action Distribution - HOLD: {action_counts[0]/total_steps:.2%}, BUY: {action_counts[1]/total_steps:.2%}, SELL: {action_counts[2]/total_steps:.2%}")
     
     # Compile results
     results = {
@@ -243,7 +272,12 @@ def test_dqn_agent(stock_data, model_path, window_size=10,
         'roi': roi,
         'sharpe_ratio': sharpe_ratio,
         'total_reward': total_reward,
-        'total_trades': len(env.trade_history)
+        'total_trades': len(env.trade_history),
+        'action_distribution': {
+            'HOLD': action_counts[0]/total_steps if total_steps > 0 else 0,
+            'BUY': action_counts[1]/total_steps if total_steps > 0 else 0,
+            'SELL': action_counts[2]/total_steps if total_steps > 0 else 0
+        }
     }
     
     return results, env.trade_history
@@ -257,10 +291,10 @@ def plot_training_metrics(metrics, save_path="training_metrics.png"):
         metrics: dictionary of training metrics
         save_path: where to save the plot
     """
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(15, 12))
     
     # Plot rewards
-    plt.subplot(2, 2, 1)
+    plt.subplot(3, 2, 1)
     plt.plot(metrics['episode_rewards'])
     plt.title('Episode Rewards')
     plt.xlabel('Episode')
@@ -268,7 +302,7 @@ def plot_training_metrics(metrics, save_path="training_metrics.png"):
     plt.grid(True)
     
     # Plot portfolio values
-    plt.subplot(2, 2, 2)
+    plt.subplot(3, 2, 2)
     plt.plot(metrics['portfolio_values'])
     plt.title('Portfolio Value')
     plt.xlabel('Episode')
@@ -276,7 +310,7 @@ def plot_training_metrics(metrics, save_path="training_metrics.png"):
     plt.grid(True)
     
     # Plot losses
-    plt.subplot(2, 2, 3)
+    plt.subplot(3, 2, 3)
     # Filter out None values
     episodes = [i for i, loss in enumerate(metrics['losses']) if loss is not None]
     losses = [loss for loss in metrics['losses'] if loss is not None]
@@ -289,12 +323,38 @@ def plot_training_metrics(metrics, save_path="training_metrics.png"):
         plt.grid(True)
     
     # Plot epsilons
-    plt.subplot(2, 2, 4)
+    plt.subplot(3, 2, 4)
     plt.plot(metrics['epsilons'])
     plt.title('Exploration Rate (Epsilon)')
     plt.xlabel('Episode')
     plt.ylabel('Epsilon')
     plt.grid(True)
+    
+    # Plot action distribution over time
+    plt.subplot(3, 2, 5)
+    hold_ratio = [counts[0] / sum(counts.values()) for counts in metrics['action_counts']]
+    buy_ratio = [counts[1] / sum(counts.values()) for counts in metrics['action_counts']]
+    sell_ratio = [counts[2] / sum(counts.values()) for counts in metrics['action_counts']]
+    
+    plt.plot(hold_ratio, label='HOLD')
+    plt.plot(buy_ratio, label='BUY')
+    plt.plot(sell_ratio, label='SELL')
+    plt.title('Action Distribution Over Episodes')
+    plt.xlabel('Episode')
+    plt.ylabel('Proportion')
+    plt.legend()
+    plt.grid(True)
+    
+    # Plot final action distribution (pie chart)
+    plt.subplot(3, 2, 6)
+    action_dist = metrics.get('action_distribution', {'HOLD': 0, 'BUY': 0, 'SELL': 0})
+    plt.pie([action_dist['HOLD'], action_dist['BUY'], action_dist['SELL']], 
+            labels=['HOLD', 'BUY', 'SELL'],
+            autopct='%1.1f%%',
+            colors=['blue', 'green', 'red'],
+            startangle=90)
+    plt.axis('equal')
+    plt.title('Overall Action Distribution')
     
     plt.tight_layout()
     plt.savefig(save_path)
@@ -322,12 +382,17 @@ def plot_test_performance(stock_data, trade_history, save_path="test_performance
     plt.plot(time_axis, stock_data, label='Stock Price')
     
     # Add buy/sell markers
+    buy_steps = []
+    sell_steps = []
+    
     for trade in trade_history:
         step = trade['step'] - 1  # Adjust for 0-indexing
         if step < len(time_axis):
             if trade['action'] == 'buy':
+                buy_steps.append(step)
                 plt.scatter(step, stock_data[step], color='green', marker='^', s=100, label='_nolegend_')
             elif trade['action'] == 'sell':
+                sell_steps.append(step)
                 plt.scatter(step, stock_data[step], color='red', marker='v', s=100, label='_nolegend_')
     
     # Add legend
@@ -336,7 +401,7 @@ def plot_test_performance(stock_data, trade_history, save_path="test_performance
     sell_marker = plt.Line2D([0], [0], marker='v', color='w', markerfacecolor='r', markersize=10, label='Sell')
     plt.legend(handles + [buy_marker, sell_marker])
     
-    plt.title('LSTM-Transformer-DQN Trading Performance')
+    plt.title(f'LSTM-Transformer-DQN Trading Performance (Buys: {len(buy_steps)}, Sells: {len(sell_steps)})')
     plt.xlabel('Time Step')
     plt.ylabel('Price')
     plt.grid(True)
@@ -349,8 +414,8 @@ def plot_test_performance(stock_data, trade_history, save_path="test_performance
 
 # Function to fetch data and run training/testing
 def run_dqn_trading(ticker="BTC-USD", train_start='2020-01-01', train_end='2021-12-31', 
-                   test_start='2022-01-01', test_end='2022-12-31', episodes=50,
-                   window_size=10, initial_balance=100000, transaction_fee=0.001):
+                   test_start='2022-01-01', test_end='2022-12-31', episodes=150,
+                   window_size=10, initial_balance=100000, transaction_fee=0):
     """
     End-to-end pipeline to fetch data, train and test the LSTM-Transformer-DQN agent
     
@@ -387,7 +452,7 @@ def run_dqn_trading(ticker="BTC-USD", train_start='2020-01-01', train_end='2021-
     np.save(f"{output_dir}/test_prices.npy", test_prices)
     
     # Model save path
-    model_path = f"{output_dir}/lstm_transformer_dqn_model.pth"
+    model_path = f"{output_dir}/lstm_transformer_dqn_model_active.pth"
     
     # Train the agent
     print(f"Training LSTM-Transformer-DQN agent on {ticker} data...")
@@ -397,7 +462,14 @@ def run_dqn_trading(ticker="BTC-USD", train_start='2020-01-01', train_end='2021-
         window_size=window_size,
         initial_balance=initial_balance,
         transaction_fee=transaction_fee,
-        model_save_path=model_path
+        model_save_path=model_path,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.997,
+        gamma=0.95,
+        learning_rate=0.002,
+        batch_size=128,
+        hidden_size=256
     )
     
     # Plot and save training metrics
@@ -446,23 +518,23 @@ if __name__ == "__main__":
     
     # Model params
     parser.add_argument('--window_size', type=int, default=10, help='Number of past prices in state')
-    parser.add_argument('--hidden_size', type=int, default=128, help='Hidden layer size')
+    parser.add_argument('--hidden_size', type=int, default=256, help='Hidden layer size')
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of LSTM layers')
     parser.add_argument('--transformer_layers', type=int, default=2, help='Number of transformer layers')
     parser.add_argument('--num_heads', type=int, default=4, help='Number of attention heads')
     
     # Training params
-    parser.add_argument('--episodes', type=int, default=50, help='Number of training episodes')
-    parser.add_argument('--batch_size', type=int, default=64, help='Training batch size')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
-    parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
+    parser.add_argument('--episodes', type=int, default=150, help='Number of training episodes')
+    parser.add_argument('--batch_size', type=int, default=128, help='Training batch size')
+    parser.add_argument('--learning_rate', type=float, default=0.002, help='Learning rate')
+    parser.add_argument('--gamma', type=float, default=0.95, help='Discount factor')
     parser.add_argument('--epsilon', type=float, default=1.0, help='Initial exploration rate')
-    parser.add_argument('--epsilon_min', type=float, default=0.01, help='Minimum exploration rate')
-    parser.add_argument('--epsilon_decay', type=float, default=0.995, help='Exploration decay rate')
+    parser.add_argument('--epsilon_min', type=float, default=0.05, help='Minimum exploration rate')
+    parser.add_argument('--epsilon_decay', type=float, default=0.997, help='Exploration decay rate')
     
     # Environment params
     parser.add_argument('--initial_balance', type=float, default=100000, help='Initial balance')
-    parser.add_argument('--transaction_fee', type=float, default=0.001, help='Transaction fee percentage')
+    parser.add_argument('--transaction_fee', type=float, default=0, help='Transaction fee percentage')
     
     args = parser.parse_args()
     

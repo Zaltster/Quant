@@ -163,6 +163,8 @@ class TradingEnvironment:
         self.shares_held = 0
         self.current_step = 0
         self.trade_history = []
+        self.price_history = []
+        self.consecutive_holds = 0
         
         # Use a window of historical prices for the state
         price_window = min(self.window_size, len(self.data))
@@ -183,6 +185,7 @@ class TradingEnvironment:
             if isinstance(price, (list, np.ndarray)):
                 price = float(price[0])
             price_history.append(price)
+            self.price_history.append(price)
         
         # State representation: [normalized balance, normalized shares_held, normalized prices]
         self.state = self._get_normalized_state(self.balance, self.shares_held, price_history)
@@ -227,16 +230,27 @@ class TradingEnvironment:
         # Ensure current_price is a scalar
         if isinstance(current_price, (list, np.ndarray)):
             current_price = float(current_price[0])
+        
+        # Keep track of price history for trend analysis
+        self.price_history.append(current_price)
+        if len(self.price_history) > 10:  # Keep last 10 prices
+            self.price_history = self.price_history[-10:]
+        
+        # Calculate recent price trend (over last 3 periods)
+        if len(self.price_history) >= 3:
+            recent_trend = (self.price_history[-1] - self.price_history[-3]) / max(self.price_history[-3], 1e-5)
+        else:
+            recent_trend = 0
             
         prev_portfolio_value = self.balance + self.shares_held * current_price
         
         # Execute action
         if action == 1:  # Buy
             # Calculate maximum shares that can be bought
-            max_shares = self.balance / (current_price * (1 + self.transaction_fee_percent))
+            max_shares = self.balance / current_price
             # Buy all possible shares (simplified strategy)
-            shares_to_buy = max_shares
-            cost = shares_to_buy * current_price * (1 + self.transaction_fee_percent)
+            shares_to_buy = max_shares * 0.95  # Buy 95% of max to leave some cash
+            cost = shares_to_buy * current_price
             
             if shares_to_buy > 0:
                 self.shares_held += shares_to_buy
@@ -253,7 +267,7 @@ class TradingEnvironment:
         elif action == 2:  # Sell
             # Sell all shares (simplified strategy)
             if self.shares_held > 0:
-                proceeds = self.shares_held * current_price * (1 - self.transaction_fee_percent)
+                proceeds = self.shares_held * current_price
                 self.balance += proceeds
                 self.trade_history.append({
                     'step': self.current_step,
@@ -275,8 +289,34 @@ class TradingEnvironment:
         # Get new portfolio value
         new_portfolio_value = self.balance + self.shares_held * next_price
         
-        # Reward is the percentage change in portfolio value
-        reward = (new_portfolio_value - prev_portfolio_value) / prev_portfolio_value if prev_portfolio_value > 0 else 0
+        # Base reward is the percentage change in portfolio value
+        base_reward = (new_portfolio_value - prev_portfolio_value) / prev_portfolio_value if prev_portfolio_value > 0 else 0
+        
+        # Additional reward components to encourage more active trading
+        action_reward = 0.0
+        
+        # Discourage holding during strong trends
+        if action == 0 and abs(recent_trend) > 0.01:  # HOLD during significant trend
+            action_reward -= 0.003
+        
+        # Encourage buying during downtrends ("buy the dip")
+        if action == 1 and recent_trend < -0.005:
+            action_reward += 0.008
+        
+        # Encourage selling during uptrends ("sell the rip")
+        if action == 2 and recent_trend > 0.005:
+            action_reward += 0.008
+        
+        # Add penalties for consecutive HOLDs (if more than 5 in a row)
+        if action == 0:
+            self.consecutive_holds += 1
+            if self.consecutive_holds > 5:
+                action_reward -= 0.001 * (self.consecutive_holds - 5)  # Increasing penalty
+        else:
+            self.consecutive_holds = 0
+        
+        # Combine base reward with action incentives
+        reward = base_reward + action_reward
         
         # Check if done
         done = self.current_step >= len(self.data) - 1
@@ -372,6 +412,11 @@ class DQNAgent:
         
         with torch.no_grad():
             q_values, self.lstm_hidden = self.model(state, self.lstm_hidden)
+            q_values_np = q_values.cpu().data.numpy()[0]
+            
+            # Log Q-values for each action
+            if is_eval:
+                print(f"Q-values: HOLD: {q_values_np[0]:.4f}, BUY: {q_values_np[1]:.4f}, SELL: {q_values_np[2]:.4f}")
             
         return q_values.cpu().data.numpy()[0].argmax()
     
@@ -444,7 +489,7 @@ class DQNAgent:
 # SimulationAgent - For direct integration with the trading simulation
 class SimulationAgent:
     def __init__(self, model_path="lstm_transformer_dqn_model.pth", window_size=10):
-    # Define model parameters
+        # Define model parameters
         self.state_size = window_size + 2  # prices + balance + shares
         self.action_size = 3  # buy, hold, sell
         self.window_size = window_size
@@ -452,7 +497,8 @@ class SimulationAgent:
         # Initialize model
         self.model = LSTMTransformerDQNModel(
             state_size=self.state_size,
-            action_size=self.action_size
+            action_size=self.action_size,
+            hidden_size=256  # Match the trained model's size
         ).to(device)
         
         # Load trained model
@@ -499,7 +545,6 @@ class SimulationAgent:
             print(f"Random action: {action} (model not loaded)")
             return action
         
-        # Rest of the original method...
         # Update price history
         self.price_history.append(current_price)
         if len(self.price_history) > self.window_size:
@@ -518,8 +563,12 @@ class SimulationAgent:
         # Get action from model
         with torch.no_grad():
             q_values, self.lstm_hidden = self.model(state_tensor, self.lstm_hidden)
+            q_values_np = q_values.cpu().data.numpy()[0]
             
-        action = q_values.cpu().data.numpy()[0].argmax()
+            # Log Q-values for each action
+            print(f"Q-values: HOLD: {q_values_np[0]:.4f}, BUY: {q_values_np[1]:.4f}, SELL: {q_values_np[2]:.4f}")
+            
+            action = q_values.cpu().data.numpy()[0].argmax()
         
         return action  # 0: hold, 1: buy, 2: sell
     

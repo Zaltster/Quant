@@ -46,7 +46,7 @@ app.add_middleware(
 active_connections = []
 dqn_agent = None
 import os
-model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lstm_transformer_dqn_model.pth")
+model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lstm_transformer_dqn_model_active.pth")
 
 # Default simulation parameters - used if backend_main.py is not available
 GAME_STOCK_TICKERS = ['BTC-USD', 'NVDA', 'TSLA', 'sp500', 'MSFT']

@@ -7,52 +7,81 @@ const DiceAnimation = (): React.ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isRolling, setIsRolling] = useState(false);
     const animationRef = useRef<number | null>(null);
-    const diceRef = useRef<Array<{ mesh: THREE.Mesh, body: CANNON.Body }>>([]);
+    const diceRef = useRef<Array<{ mesh: THREE.Mesh, body: CANNON.Body, frozen: boolean, screenPosition: { x: number, y: number, z: number } }>>([]);
     const [showButton, setShowButton] = useState(false);
     const worldRef = useRef<CANNON.World | null>(null);
+    const sceneRef = useRef<THREE.Scene | null>(null);
+    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
 
     // Initialize scene and physics
     useEffect(() => {
         if (!containerRef.current) return;
 
         const container = containerRef.current;
-        const width = container.clientWidth;
-        const height = container.clientHeight;
+
+        // Get container dimensions
+        const width = window.innerWidth;
+        const height = window.innerHeight;
 
         // Initialize Three.js scene
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf0f0f0);
+        sceneRef.current = scene;
+        // Make scene background transparent
+        scene.background = null;
 
         // Add lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); // Brighter ambient light
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // Brighter directional light
         directionalLight.position.set(5, 10, 7);
         directionalLight.castShadow = true;
         directionalLight.shadow.mapSize.width = 1024;
         directionalLight.shadow.mapSize.height = 1024;
         scene.add(directionalLight);
 
+        // Add a secondary light to brighten the dots
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        fillLight.position.set(-5, 5, -10);
+        scene.add(fillLight);
+
         // Setup camera
         const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-        camera.position.set(0, 8, 14);
+        camera.position.set(0, 10, 20);
         camera.lookAt(0, 0, 0);
+        cameraRef.current = camera;
 
-        // Initialize renderer
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        // Initialize renderer with transparency
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true, // Enable transparency
+            preserveDrawingBuffer: true // Needed for some devices
+        });
         renderer.setSize(width, height);
+        renderer.setClearColor(0x000000, 0); // Transparent background
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.setPixelRatio(window.devicePixelRatio);
-        container.appendChild(renderer.domElement);
 
-        // Add controls
+        // Critical: Position the canvas as a fixed overlay
+        renderer.domElement.style.position = 'fixed';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.width = '100vw';
+        renderer.domElement.style.height = '100vh';
+        renderer.domElement.style.zIndex = '5'; // Layer above text but below UI
+        renderer.domElement.style.pointerEvents = 'none'; // Allow clicks to pass through
+
+        // Append to the body instead of the container for full overlay
+        document.body.appendChild(renderer.domElement);
+
+        // Add controls (optional)
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableZoom = false;
         controls.enablePan = false;
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
+        controls.enabled = false; // Disable orbit controls for cleaner integration
 
         // Initialize physics
         const world = new CANNON.World();
@@ -64,9 +93,10 @@ const DiceAnimation = (): React.ReactElement => {
         // Create materials
         const groundMaterial = new CANNON.Material("groundMaterial");
         const diceMaterial = new CANNON.Material("diceMaterial");
+        const wallMaterial = new CANNON.Material("wallMaterial");
 
         // Define contact properties
-        const contact = new CANNON.ContactMaterial(
+        const diceGroundContact = new CANNON.ContactMaterial(
             groundMaterial,
             diceMaterial,
             {
@@ -75,7 +105,17 @@ const DiceAnimation = (): React.ReactElement => {
             }
         );
 
-        world.addContactMaterial(contact);
+        const diceWallContact = new CANNON.ContactMaterial(
+            wallMaterial,
+            diceMaterial,
+            {
+                friction: 0.0, // Less friction with walls
+                restitution: 0.8, // More bounce with walls
+            }
+        );
+
+        world.addContactMaterial(diceGroundContact);
+        world.addContactMaterial(diceWallContact);
 
         // Create ground plane
         const groundShape = new CANNON.Plane();
@@ -88,44 +128,140 @@ const DiceAnimation = (): React.ReactElement => {
         groundBody.position.set(0, -0.5, 0);
         world.addBody(groundBody);
 
-        // Create table
-        const tableGeometry = new THREE.BoxGeometry(10, 0.5, 10);
-        const tableMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1e6b24, // Green felt color
-            roughness: 0.8,
-            metalness: 0.2
-        });
-        const table = new THREE.Mesh(tableGeometry, tableMaterial);
-        table.position.y = -0.5;
-        table.receiveShadow = true;
-        scene.add(table);
+        // Calculate wall positions based on camera view
+        // Project screen edges to world space at same distance as center
+        const viewDistance = 20; // Match this with camera Z position
+        const vFOV = camera.fov * Math.PI / 180;
+        const visibleHeight = 2 * Math.tan(vFOV / 2) * viewDistance;
+        const visibleWidth = visibleHeight * camera.aspect;
 
-        // Create walls
-        createWall(world, scene, 10, 2, 0.2, 0, 0, -5, groundMaterial);
-        createWall(world, scene, 10, 2, 0.2, 0, 0, 5, groundMaterial);
-        createWall(world, scene, 0.2, 2, 10, -5, 0, 0, groundMaterial);
-        createWall(world, scene, 0.2, 2, 10, 5, 0, 0, groundMaterial);
+        const boundaryWidth = visibleWidth * 0.8; // Use 80% of visible width
+        const boundaryHeight = visibleHeight * 0.8; // Use 80% of visible height
+        const boundaryDepth = 10; // Depth of play area
+
+        // Create invisible boundaries
+        createBoundaryWall(world, boundaryWidth, 0.1, boundaryDepth, 0, boundaryHeight / 2, 0, wallMaterial); // top wall
+        createBoundaryWall(world, boundaryWidth, 0.1, boundaryDepth, 0, -boundaryHeight / 2, 0, wallMaterial); // bottom wall
+        createBoundaryWall(world, boundaryWidth, boundaryHeight, 0.1, 0, 0, -boundaryDepth / 2, wallMaterial); // back wall
+        createBoundaryWall(world, boundaryWidth, boundaryHeight, 0.1, 0, 0, boundaryDepth / 2, wallMaterial); // front wall
+        createBoundaryWall(world, 0.1, boundaryHeight, boundaryDepth, -boundaryWidth / 2, 0, 0, wallMaterial); // left wall
+        createBoundaryWall(world, 0.1, boundaryHeight, boundaryDepth, boundaryWidth / 2, 0, 0, wallMaterial); // right wall
+
+        // Handle window resize
+        const handleResize = () => {
+            const newWidth = window.innerWidth;
+            const newHeight = window.innerHeight;
+
+            camera.aspect = newWidth / newHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(newWidth, newHeight);
+
+            // Update frozen dice positions when window resizes
+            diceRef.current.forEach(dice => {
+                if (dice.frozen) {
+                    updateScreenPosition(dice);
+                }
+            });
+        };
+
+        window.addEventListener('resize', handleResize);
+
+        // Handle scroll - update frozen dice positions
+        const handleScroll = () => {
+            diceRef.current.forEach(dice => {
+                if (dice.frozen) {
+                    updateScreenPosition(dice);
+                }
+            });
+        };
+
+        window.addEventListener('scroll', handleScroll);
+
+        // Function to update a die's screen position
+        const updateScreenPosition = (dice: typeof diceRef.current[0]) => {
+            if (!dice.frozen || !dice.mesh || !camera) return;
+
+            const vector = new THREE.Vector3(
+                dice.screenPosition.x,
+                dice.screenPosition.y,
+                dice.screenPosition.z
+            );
+
+            vector.project(camera);
+
+            // Convert to screen coordinates
+            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+
+            // Apply transform to make the dice fixed to the screen
+            dice.mesh.userData.screenX = x;
+            dice.mesh.userData.screenY = y;
+        };
 
         // Animation loop
         const animate = () => {
             animationRef.current = requestAnimationFrame(animate);
 
-            // Update physics
+            // Update physics for non-frozen dice
             if (world) {
                 world.step(1 / 60);
 
-                // Update dice position
+                // Update dice positions
                 diceRef.current.forEach(dice => {
-                    const position = dice.body.position;
-                    const quaternion = dice.body.quaternion;
+                    if (dice.frozen) {
+                        // For frozen dice, maintain their screen position
+                        if (dice.mesh.userData.screenX !== undefined) {
+                            // Convert screen position back to world coordinates
+                            const vector = new THREE.Vector3(
+                                (dice.mesh.userData.screenX / window.innerWidth) * 2 - 1,
+                                -(dice.mesh.userData.screenY / window.innerHeight) * 2 + 1,
+                                0.5
+                            );
 
-                    dice.mesh.position.set(position.x, position.y, position.z);
-                    dice.mesh.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
+                            vector.unproject(camera);
+                            const dir = vector.sub(camera.position).normalize();
+                            const distance = -camera.position.z / dir.z;
+                            const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+                            dice.mesh.position.copy(pos);
+                        }
+                    } else {
+                        // For non-frozen dice, update from physics
+                        const position = dice.body.position;
+                        const quaternion = dice.body.quaternion;
+
+                        dice.mesh.position.set(position.x, position.y, position.z);
+                        dice.mesh.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
+
+                        // Keep dice visible - constrain their position
+                        if (position.x < -boundaryWidth / 2) {
+                            dice.body.position.x = -boundaryWidth / 2 + 0.8;
+                            dice.body.velocity.x = Math.abs(dice.body.velocity.x) * 0.8; // Bounce back
+                        }
+                        if (position.x > boundaryWidth / 2) {
+                            dice.body.position.x = boundaryWidth / 2 - 0.8;
+                            dice.body.velocity.x = -Math.abs(dice.body.velocity.x) * 0.8; // Bounce back
+                        }
+                        if (position.z < -boundaryDepth / 2) {
+                            dice.body.position.z = -boundaryDepth / 2 + 0.8;
+                            dice.body.velocity.z = Math.abs(dice.body.velocity.z) * 0.8; // Bounce back
+                        }
+                        if (position.z > boundaryDepth / 2) {
+                            dice.body.position.z = boundaryDepth / 2 - 0.8;
+                            dice.body.velocity.z = -Math.abs(dice.body.velocity.z) * 0.8; // Bounce back
+                        }
+                        if (position.y > boundaryHeight / 2) {
+                            dice.body.position.y = boundaryHeight / 2 - 0.8;
+                            dice.body.velocity.y = -Math.abs(dice.body.velocity.y) * 0.8; // Bounce back
+                        }
+                    }
                 });
 
                 // Check if dice have settled
                 if (isRolling) {
                     const allSettled = diceRef.current.every(dice => {
+                        if (dice.frozen) return true;
+
                         const velocity = dice.body.velocity;
                         const angularVelocity = dice.body.angularVelocity;
 
@@ -133,13 +269,41 @@ const DiceAnimation = (): React.ReactElement => {
                             Math.abs(velocity.x) < 0.1 &&
                             Math.abs(velocity.y) < 0.1 &&
                             Math.abs(velocity.z) < 0.1 &&
-                            Math.abs(angularVelocity.x) < 0.1 &&
-                            Math.abs(angularVelocity.y) < 0.1 &&
-                            Math.abs(angularVelocity.z) < 0.1
+                            Math.abs(angularVelocity.x) < 0.05 &&
+                            Math.abs(angularVelocity.y) < 0.05 &&
+                            Math.abs(angularVelocity.z) < 0.05
                         );
                     });
 
                     if (allSettled) {
+                        // Freeze dice in place on screen
+                        diceRef.current.forEach(dice => {
+                            if (!dice.frozen) {
+                                dice.frozen = true;
+
+                                // Store the current screen position
+                                const vector = dice.mesh.position.clone();
+                                vector.project(camera);
+
+                                // Convert to screen coordinates and store
+                                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                                const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+
+                                dice.mesh.userData.screenX = x;
+                                dice.mesh.userData.screenY = y;
+                                dice.screenPosition = {
+                                    x: dice.mesh.position.x,
+                                    y: dice.mesh.position.y,
+                                    z: dice.mesh.position.z
+                                };
+
+                                // Remove physics body as we don't need it anymore
+                                if (worldRef.current) {
+                                    worldRef.current.removeBody(dice.body);
+                                }
+                            }
+                        });
+
                         setIsRolling(false);
                         setShowButton(true);
                     }
@@ -154,8 +318,7 @@ const DiceAnimation = (): React.ReactElement => {
 
         // Auto-roll on first render
         setTimeout(() => {
-            createDice(world, scene, -2, 5, -2);
-            createDice(world, scene, 2, 5, 2);
+            rollDice();
         }, 500);
 
         // Cleanup on unmount
@@ -164,16 +327,18 @@ const DiceAnimation = (): React.ReactElement => {
                 cancelAnimationFrame(animationRef.current);
             }
 
-            if (renderer) {
-                container.removeChild(renderer.domElement);
+            window.removeEventListener('resize', handleResize);
+            window.removeEventListener('scroll', handleScroll);
+
+            if (renderer.domElement && renderer.domElement.parentNode) {
+                renderer.domElement.parentNode.removeChild(renderer.domElement);
             }
         };
     }, []);
 
-    // Create a physics wall
-    const createWall = (
+    // Create a boundary wall - physics only, no visual component
+    const createBoundaryWall = (
         world: CANNON.World,
-        scene: THREE.Scene,
         width: number,
         height: number,
         depth: number,
@@ -182,7 +347,7 @@ const DiceAnimation = (): React.ReactElement => {
         z: number,
         material: CANNON.Material
     ) => {
-        // Physics body
+        // Physics body only - no visual mesh
         const halfExtents = new CANNON.Vec3(width / 2, height / 2, depth / 2);
         const wallShape = new CANNON.Box(halfExtents);
         const wallBody = new CANNON.Body({
@@ -192,31 +357,17 @@ const DiceAnimation = (): React.ReactElement => {
         });
         wallBody.position.set(x, y, z);
         world.addBody(wallBody);
-
-        // Visual mesh
-        const wallMaterial = new THREE.MeshStandardMaterial({
-            color: 0x654321, // Brown color
-            roughness: 0.8,
-            metalness: 0.1
-        });
-
-        const wallGeometry = new THREE.BoxGeometry(width, height, depth);
-        const wall = new THREE.Mesh(wallGeometry, wallMaterial);
-        wall.position.set(x, y, z);
-        wall.receiveShadow = true;
-        wall.castShadow = true;
-        scene.add(wall);
     };
 
     // Create a die
     const createDice = (world: CANNON.World, scene: THREE.Scene, x: number, y: number, z: number) => {
         // Create die geometry
-        const dieSize = 1;
+        const dieSize = 1.5; // Larger for better visibility
         const geometry = new THREE.BoxGeometry(dieSize, dieSize, dieSize);
         const material = new THREE.MeshStandardMaterial({
-            color: 0xdc143c, // Red color
-            roughness: 0.5,
-            metalness: 0.1
+            color: 0x8b0000, // Dark red color for better contrast
+            roughness: 0.3,
+            metalness: 0.2
         });
 
         // Create die mesh
@@ -226,7 +377,7 @@ const DiceAnimation = (): React.ReactElement => {
         scene.add(mesh);
 
         // Add die dots
-        addDieDots(mesh);
+        addDieDots(mesh, dieSize);
 
         // Create physics body
         const diceMaterial = new CANNON.Material("diceMaterial");
@@ -235,6 +386,8 @@ const DiceAnimation = (): React.ReactElement => {
             mass: 1,
             material: diceMaterial,
             shape: shape,
+            linearDamping: 0.1, // Add some air resistance
+            angularDamping: 0.1 // Add some rotational resistance
         });
 
         // Set initial position and velocity
@@ -249,118 +402,86 @@ const DiceAnimation = (): React.ReactElement => {
         // Add to simulation
         world.addBody(body);
 
-        // Apply impulse
+        // Apply impulse - stronger force for more dramatic throw
         body.applyImpulse(
-            new CANNON.Vec3(8 + Math.random() * 4, -2, 4 + Math.random() * 4),
+            new CANNON.Vec3(10 + Math.random() * 8, -1, 5 + Math.random() * 8),
             new CANNON.Vec3(body.position.x, body.position.y, body.position.z)
         );
 
-        // Add to reference
-        diceRef.current.push({ mesh, body });
+        // Add to reference with frozen flag set to false
+        diceRef.current.push({
+            mesh,
+            body,
+            frozen: false,
+            screenPosition: { x: 0, y: 0, z: 0 }
+        });
 
         return { mesh, body };
     };
 
-    // Add dots to a die face
-    const addDieDots = (dieMesh: THREE.Mesh) => {
-        const dotSize = 0.12;
-        const dotGeometry = new THREE.SphereGeometry(dotSize, 16, 16);
-        const dotMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    // Add dots to a die face - as circles instead of spheres
+    const addDieDots = (dieMesh: THREE.Mesh, dieSize: number) => {
+        const dotSize = dieSize * 0.12; // Scale dots with die size
+        const offset = dieSize * 0.5 + 0.01; // Position dots on the surface with slight offset
+        const dotDistance = dieSize * 0.25; // Scaled spacing
 
-        // Face 1: 1 dot in center
-        const dot1 = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot1.position.set(0, 0, 0.5 + 0.01);
-        dieMesh.add(dot1);
+        // Create circle geometry for dots
+        const createCircleDot = (x: number, y: number, z: number, normal: THREE.Vector3) => {
+            // Create a circle geometry
+            const circleGeometry = new THREE.CircleGeometry(dotSize, 32);
+            const circleMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-        // Face 2: 2 dots diagonally
-        const dot2a = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot2a.position.set(0.25, 0.25, -0.5 - 0.01);
-        dieMesh.add(dot2a);
+            // Create the mesh
+            const circle = new THREE.Mesh(circleGeometry, circleMaterial);
 
-        const dot2b = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot2b.position.set(-0.25, -0.25, -0.5 - 0.01);
-        dieMesh.add(dot2b);
+            // Position it
+            circle.position.set(x, y, z);
 
-        // Face 3: 3 dots diagonally (right side)
-        const dot3a = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot3a.position.set(0.5 + 0.01, 0.25, 0.25);
-        dieMesh.add(dot3a);
+            // Orient it to face outward
+            circle.lookAt(x + normal.x, y + normal.y, z + normal.z);
 
-        const dot3b = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot3b.position.set(0.5 + 0.01, 0, 0);
-        dieMesh.add(dot3b);
+            // Add to die
+            dieMesh.add(circle);
+            return circle;
+        };
 
-        const dot3c = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot3c.position.set(0.5 + 0.01, -0.25, -0.25);
-        dieMesh.add(dot3c);
+        // Face 1 (single dot - front face)
+        createCircleDot(0, 0, offset, new THREE.Vector3(0, 0, 1));
 
-        // Face 4: 4 dots in corners (left side)
-        const dot4a = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot4a.position.set(-0.5 - 0.01, 0.25, 0.25);
-        dieMesh.add(dot4a);
+        // Face 2 (two dots - back face)
+        createCircleDot(dotDistance, dotDistance, -offset, new THREE.Vector3(0, 0, -1));
+        createCircleDot(-dotDistance, -dotDistance, -offset, new THREE.Vector3(0, 0, -1));
 
-        const dot4b = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot4b.position.set(-0.5 - 0.01, 0.25, -0.25);
-        dieMesh.add(dot4b);
+        // Face 3 (three dots - right face)
+        createCircleDot(offset, dotDistance, dotDistance, new THREE.Vector3(1, 0, 0));
+        createCircleDot(offset, 0, 0, new THREE.Vector3(1, 0, 0));
+        createCircleDot(offset, -dotDistance, -dotDistance, new THREE.Vector3(1, 0, 0));
 
-        const dot4c = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot4c.position.set(-0.5 - 0.01, -0.25, 0.25);
-        dieMesh.add(dot4c);
+        // Face 4 (four dots - left face)
+        createCircleDot(-offset, dotDistance, dotDistance, new THREE.Vector3(-1, 0, 0));
+        createCircleDot(-offset, dotDistance, -dotDistance, new THREE.Vector3(-1, 0, 0));
+        createCircleDot(-offset, -dotDistance, dotDistance, new THREE.Vector3(-1, 0, 0));
+        createCircleDot(-offset, -dotDistance, -dotDistance, new THREE.Vector3(-1, 0, 0));
 
-        const dot4d = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot4d.position.set(-0.5 - 0.01, -0.25, -0.25);
-        dieMesh.add(dot4d);
+        // Face 5 (five dots - top face)
+        createCircleDot(dotDistance, offset, dotDistance, new THREE.Vector3(0, 1, 0));
+        createCircleDot(-dotDistance, offset, dotDistance, new THREE.Vector3(0, 1, 0));
+        createCircleDot(0, offset, 0, new THREE.Vector3(0, 1, 0));
+        createCircleDot(dotDistance, offset, -dotDistance, new THREE.Vector3(0, 1, 0));
+        createCircleDot(-dotDistance, offset, -dotDistance, new THREE.Vector3(0, 1, 0));
 
-        // Face 5: 5 dots (4 corners + center) (top)
-        const dot5a = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot5a.position.set(0.25, 0.5 + 0.01, 0.25);
-        dieMesh.add(dot5a);
-
-        const dot5b = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot5b.position.set(-0.25, 0.5 + 0.01, 0.25);
-        dieMesh.add(dot5b);
-
-        const dot5c = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot5c.position.set(0, 0.5 + 0.01, 0);
-        dieMesh.add(dot5c);
-
-        const dot5d = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot5d.position.set(0.25, 0.5 + 0.01, -0.25);
-        dieMesh.add(dot5d);
-
-        const dot5e = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot5e.position.set(-0.25, 0.5 + 0.01, -0.25);
-        dieMesh.add(dot5e);
-
-        // Face 6: 6 dots (2 rows of 3) (bottom)
-        const dot6a = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot6a.position.set(0.25, -0.5 - 0.01, 0.25);
-        dieMesh.add(dot6a);
-
-        const dot6b = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot6b.position.set(0, -0.5 - 0.01, 0.25);
-        dieMesh.add(dot6b);
-
-        const dot6c = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot6c.position.set(-0.25, -0.5 - 0.01, 0.25);
-        dieMesh.add(dot6c);
-
-        const dot6d = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot6d.position.set(0.25, -0.5 - 0.01, -0.25);
-        dieMesh.add(dot6d);
-
-        const dot6e = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot6e.position.set(0, -0.5 - 0.01, -0.25);
-        dieMesh.add(dot6e);
-
-        const dot6f = new THREE.Mesh(dotGeometry, dotMaterial);
-        dot6f.position.set(-0.25, -0.5 - 0.01, -0.25);
-        dieMesh.add(dot6f);
+        // Face 6 (six dots - bottom face)
+        createCircleDot(dotDistance, -offset, dotDistance, new THREE.Vector3(0, -1, 0));
+        createCircleDot(0, -offset, dotDistance, new THREE.Vector3(0, -1, 0));
+        createCircleDot(-dotDistance, -offset, dotDistance, new THREE.Vector3(0, -1, 0));
+        createCircleDot(dotDistance, -offset, -dotDistance, new THREE.Vector3(0, -1, 0));
+        createCircleDot(0, -offset, -dotDistance, new THREE.Vector3(0, -1, 0));
+        createCircleDot(-dotDistance, -offset, -dotDistance, new THREE.Vector3(0, -1, 0));
     };
 
     // Roll dice
     const rollDice = () => {
-        if (isRolling || !worldRef.current) return;
+        if (isRolling || !worldRef.current || !sceneRef.current) return;
 
         setIsRolling(true);
         setShowButton(false);
@@ -368,23 +489,24 @@ const DiceAnimation = (): React.ReactElement => {
         // Remove existing dice
         diceRef.current.forEach(die => {
             die.mesh.removeFromParent();
-            worldRef.current?.removeBody(die.body);
+            if (!die.frozen && worldRef.current) {
+                worldRef.current.removeBody(die.body);
+            }
         });
         diceRef.current = [];
 
-        // Create new dice
-        if (worldRef.current) {
-            const scene = (worldRef.current as any)._threeScene || (diceRef.current[0]?.mesh.parent as THREE.Scene);
-            createDice(worldRef.current, scene, -2, 5, -2);
-            createDice(worldRef.current, scene, 2, 5, 2);
-        }
+        // Create new dice - start from top left
+        createDice(worldRef.current, sceneRef.current, -5, 10, -2);
+        createDice(worldRef.current, sceneRef.current, -3, 12, 2);
     };
 
     return (
-        <div className="relative w-full" style={{ height: '300px' }}>
+        <div className="inline-block relative" style={{ width: '100px', height: '100px' }}>
+            {/* This is just a placeholder div that doesn't take up space */}
             <div
                 ref={containerRef}
-                className="w-full h-full bg-transparent"
+                className="pointer-events-none"
+                style={{ width: '100%', height: '100%', position: 'absolute', zIndex: 1 }}
             />
 
             {showButton && !isRolling && (
@@ -394,7 +516,9 @@ const DiceAnimation = (): React.ReactElement => {
                     style={{
                         bottom: '-40px',
                         left: '50%',
-                        transform: 'translateX(-50%)'
+                        transform: 'translateX(-50%)',
+                        zIndex: 100, // Very high z-index
+                        pointerEvents: 'auto' // Make button clickable
                     }}
                 >
                     Roll Dice

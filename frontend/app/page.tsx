@@ -27,9 +27,9 @@ export default function Home() {
             Sharpen your skills with realistic quantitative trading simulations
             and challenges, presented in an interview-style format. Prepare for your next quant interview.
           </p>
-          <div style={{ position: 'relative', zIndex: 10, marginBottom: '20px' }}>
+          {/*   <div style={{ position: 'relative', zIndex: 10, marginBottom: '20px' }}> 
             <DiceAnimation />
-          </div>
+          </div> */}
 
           {/* Call to Action Button - Links to the first game */}
           <Link href="/games/stock-101" passHref legacyBehavior>

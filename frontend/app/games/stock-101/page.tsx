@@ -93,17 +93,22 @@ export default function Stock101Page() {
 
     // --- Bot Trade Handlers ---
     const handleBotBuy = useCallback((ticker: string, quantity: number, tradeLeverage: number) => {
-        if (isGameOver || !gameData || quantity <= 0 || !Number.isInteger(quantity)) {
+        // FIXED: Removed the Number.isInteger check to allow fractional quantities
+        if (isGameOver || !gameData || quantity <= 0) {
+            console.log(`Bot buy rejected: isGameOver=${isGameOver}, quantity=${quantity}`);
             return;
         }
 
         const currentPrice = getCurrentPrice(ticker);
         if (currentPrice === null || currentPrice <= 0) {
+            console.log(`Bot buy rejected: invalid price=${currentPrice}`);
             return;
         }
 
         const cost = quantity * currentPrice;
         const marginRequired = cost / tradeLeverage;
+
+        console.log(`Bot attempting buy: ${ticker}, quantity=${quantity}, price=${currentPrice}, cost=${cost}, marginRequired=${marginRequired}, botCash=${botCash}`);
 
         if (botCash >= marginRequired) {
             const newPosition: Position = {
@@ -129,11 +134,15 @@ export default function Stock101Page() {
             setBotCash(prevCash => prevCash - marginRequired);
             setBotPositions(prevPositions => [...prevPositions, newPosition]);
             setBotMessage(`Bot bought ${quantity} ${ticker} @ ${currentPrice.toFixed(2)}`);
+            console.log(`Bot BUY executed: ${quantity} ${ticker} @ ${currentPrice.toFixed(2)}`);
+        } else {
+            console.log(`Bot buy failed: Insufficient cash. Need ${marginRequired}, have ${botCash}`);
         }
     }, [botCash, currentStep, gameData, isGameOver, getCurrentPrice]);
 
     const handleBotSell = useCallback((ticker: string, quantityToSell: number) => {
         if (isGameOver || !gameData || quantityToSell <= 0) {
+            console.log(`Bot sell rejected: isGameOver=${isGameOver}, quantity=${quantityToSell}`);
             return false;
         }
 
@@ -141,6 +150,7 @@ export default function Stock101Page() {
         const effectiveSellPrice = currentPrice ?? 0;
 
         if (effectiveSellPrice < 0 || currentPrice === null) {
+            console.log(`Bot sell rejected: invalid price=${currentPrice}`);
             return false;
         }
 
@@ -155,7 +165,10 @@ export default function Stock101Page() {
         const totalSharesHeld = positionsForTicker.reduce((sum, p) => sum + p.quantity, 0);
         const tolerance = 1e-9;
 
+        console.log(`Bot attempting sell: ${ticker}, quantity=${quantityToSell}, price=${effectiveSellPrice}, totalSharesHeld=${totalSharesHeld}`);
+
         if (totalSharesHeld < quantityToSell - tolerance) {
+            console.log(`Bot sell failed: Not enough shares. Have ${totalSharesHeld}, tried to sell ${quantityToSell}`);
             return false;
         }
 
@@ -201,9 +214,11 @@ export default function Stock101Page() {
 
             setBotTradeHistory(prev => [...prev, newTrade]);
             setBotMessage(`Bot sold ${actualQuantitySold.toFixed(4)} ${ticker} @ ${effectiveSellPrice.toFixed(2)}`);
+            console.log(`Bot SELL executed: ${actualQuantitySold.toFixed(4)} ${ticker} @ ${effectiveSellPrice.toFixed(2)}, P&L: $${totalRealizedPnl.toFixed(2)}`);
             return true;
         }
 
+        console.log(`Bot sell failed: Sell quantity too small or error`);
         return false;
     }, [botPositions, currentStep, gameData, isGameOver, getCurrentPrice]);
 
@@ -220,7 +235,7 @@ export default function Stock101Page() {
         const ws = new WebSocket(`ws://127.0.0.1:8001/ws/trading_bot`);
 
         ws.onopen = () => {
-            console.log('Connected to trading bot');
+            console.log('Connected to trading bot at step:', currentStep);
             setBotConnected(true);
             setBotMessage('Trading bot connected');
         };
@@ -241,32 +256,66 @@ export default function Stock101Page() {
             try {
                 const message = JSON.parse(event.data);
 
-                if (message.type === 'AGENT_DECISION') {
+                if (message.type === "AGENT_DECISION") {
                     // Store bot decision
                     setBotDecisions(prev => [...prev, message.data]);
 
                     // Execute bot trade based on decision
-                    const { action, price, step } = message.data;
+                    const { action, action_name, price, step } = message.data;
                     const currentPrice = getCurrentPrice(selectedTicker);
 
+                    console.log(`Bot decision at step ${step}: ${action_name} (${action}) at $${price}`);
+
                     if (currentPrice !== null && step === currentStep) {
-                        // Calculate quantity based on bot's available cash
-                        // Simple strategy: use 10% of available cash for each buy
-                        if (action === 1) { // BUY
-                            const cashToUse = botCash * 0.1;
-                            const quantity = Math.floor(cashToUse / currentPrice);
-                            if (quantity > 0) {
-                                handleBotBuy(selectedTicker, quantity, 1); // Bot uses leverage 1
+                        // Modified logic: 
+                        // 1. Use original model decision if it's BUY or SELL
+                        // 2. Randomly override HOLD decisions ~30% of the time
+                        // Use only the model's actual decisions with no overrides
+                        let effectiveAction = action;
+                        console.log(`Bot decision: ${action === 0 ? 'HOLD' : action === 1 ? 'BUY' : 'SELL'} at price $${currentPrice}`);
+
+                        // Execute based on the effective action
+                        if (effectiveAction === 1) { // BUY
+                            // Use 20% of available cash
+                            const cashToUse = botCash * 0.2;
+                            let quantity;
+
+                            // For high-priced assets like BTC, allow fractional purchases
+                            if (selectedTicker === 'BTC-USD' || currentPrice > 1000) {
+                                // Calculate how many units we can buy with the cash, allowing fractional units
+                                quantity = parseFloat((cashToUse / currentPrice).toFixed(4));
+                                // Ensure minimum quantity is 0.001 for high-price assets
+                                if (quantity < 0.001 && botCash >= currentPrice * 0.001) {
+                                    quantity = 0.001;
+                                }
+                            } else {
+                                // For lower-priced assets, use whole units
+                                quantity = Math.floor(cashToUse / currentPrice);
+                                // Ensure at least 1 unit if we have enough cash
+                                if (quantity === 0 && botCash >= currentPrice) {
+                                    quantity = 1;
+                                }
                             }
-                        } else if (action === 2) { // SELL
-                            // Sell all shares of the selected ticker
+
+                            console.log(`Bot BUY calculation: Cash: $${botCash.toFixed(2)}, Using: $${cashToUse.toFixed(2)}, Price: $${currentPrice.toFixed(2)}, Quantity: ${quantity}`);
+
+                            if (quantity > 0) {
+                                handleBotBuy(selectedTicker, quantity, 1);
+                            }
+                        } else if (effectiveAction === 2) { // SELL
+                            // Only sell if we have shares
                             const tickerPositions = botPositions.filter(p => p.ticker === selectedTicker);
                             const totalShares = tickerPositions.reduce((sum, pos) => sum + pos.quantity, 0);
+
+                            console.log(`Bot SELL calculation: Total shares held: ${totalShares}`);
+
                             if (totalShares > 0) {
-                                handleBotSell(selectedTicker, totalShares);
+                                // Sell half the position instead of all
+                                const sellQuantity = totalShares * 0.5;
+                                handleBotSell(selectedTicker, sellQuantity);
                             }
                         }
-                        // For HOLD (action === 0), do nothing
+                        // For original HOLD (action === 0), do nothing
                     }
                 } else if (message.type === 'AGENT_ERROR') {
                     console.error('Agent error:', message.data.message);
@@ -650,23 +699,30 @@ export default function Stock101Page() {
     }, [currentStep, cash, positions, gameData, gameStarted, getCurrentPrice, handleSell]);
 
     // Recalculate Bot Equity
+    // In the "Recalculate Bot Equity" useEffect in page.tsx
     useEffect(() => {
         if (!gameStarted || !gameData || !botPositions) return;
 
         let calculatedEquity = botCash;
+        console.log('Bot portfolio calculation:');
+        console.log(`- Initial cash: $${botCash.toFixed(2)}`);
 
         botPositions.forEach(pos => {
             const currentPrice = getCurrentPrice(pos.ticker);
 
             if (currentPrice === null) {
-                calculatedEquity += (pos.entryPrice * pos.quantity) / pos.leverage;
+                const positionValue = (pos.entryPrice * pos.quantity) / pos.leverage;
+                calculatedEquity += positionValue;
+                console.log(`- ${pos.ticker}: ${pos.quantity} shares, value: $${positionValue.toFixed(2)} (using entry price)`);
             } else {
                 const requiredMargin = (pos.entryPrice * pos.quantity) / pos.leverage;
                 const unrealizedPnl = (currentPrice - pos.entryPrice) * pos.quantity * pos.leverage;
                 calculatedEquity += requiredMargin + unrealizedPnl;
+                console.log(`- ${pos.ticker}: ${pos.quantity} shares, margin: $${requiredMargin.toFixed(2)}, unrealized P&L: $${unrealizedPnl.toFixed(2)}`);
             }
         });
 
+        console.log(`Total bot portfolio value: $${calculatedEquity.toFixed(2)}`);
         setBotPortfolioValue(calculatedEquity);
     }, [currentStep, botCash, botPositions, gameData, gameStarted, getCurrentPrice]);
 
@@ -678,7 +734,7 @@ export default function Stock101Page() {
             setLiquidatedMessage(null);
             setTradeMessage({
                 type: 'error',
-                text: `BANKRUPT! Equity reached $${portfolioValue.toFixed(2)}`
+                text: `BANKRUPT! Equity reached ${portfolioValue.toFixed(2)}`
             });
         }
     }, [portfolioValue, positions, gameStarted, isGameOver]);

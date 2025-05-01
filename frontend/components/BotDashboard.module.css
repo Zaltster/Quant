@@ -93,23 +93,62 @@
     overflow: hidden;
 }
 
-.holdingRow,
-.tradeRow {
+.holdingRow {
     display: flex;
     justify-content: space-between;
     padding: 8px 12px;
     border-bottom: 1px solid #eee;
 }
 
-.holdingRow:last-child,
-.tradeRow:last-child {
+.holdingRow:last-child {
     border-bottom: none;
+}
+
+.tradeHistoryHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.tradeViewToggle {
+    display: flex;
+    gap: 5px;
+}
+
+.toggleButton {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.toggleButton:hover {
+    background-color: #e0e0e0;
+}
+
+.activeToggle {
+    background-color: #007bff;
+    color: white;
+    border-color: #0069d9;
+}
+
+.activeToggle:hover {
+    background-color: #0069d9;
 }
 
 .tradeRow {
     display: flex;
     flex-direction: column;
     padding: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.tradeRow:last-child {
+    border-bottom: none;
 }
 
 .tradeInfo {
@@ -122,6 +161,11 @@
     display: flex;
     justify-content: space-between;
     font-size: 0.9em;
+}
+
+.tradeTicker {
+    font-weight: bold;
+    color: #555;
 }
 
 .buyTrade {
